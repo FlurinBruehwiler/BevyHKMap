@@ -1,3 +1,4 @@
+use std::fs;
 use bevy::prelude::*;
 use bevy_inspector_egui::WorldInspectorPlugin;
 
@@ -18,114 +19,91 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(WorldInspectorPlugin::new())
 
-        .register_type::<Tower>()
-        .register_type::<Lifetime>()
+        .register_type::<Image>()
+        .register_type::<ControlableCamera>()
 
-        .add_startup_system(asset_loading)
-        .add_startup_system(spawn_camera)
-        .add_startup_system(spawn_basic_scene)
+        .add_startup_system(setup)
 
-        .add_system(tower_shooting)
-        .add_system(bullet_despawn)
+        .add_system(print_mouse_events_system)
 
         .run();
 }
 
 #[derive(Reflect, Component, Default)]
 #[reflect(Component)]
-pub struct Tower {
-    shooting_timer: Timer,
-}
+pub struct Image;
 
 #[derive(Reflect, Component, Default)]
 #[reflect(Component)]
-pub struct Lifetime {
-    timer: Timer
+pub struct ControlableCamera{
+    start_pos: Vec2
 }
 
-fn asset_loading(mut commands: Commands, assets: Res<AssetServer>){
-    commands.insert_resource(GameAssets{
-        bullet_scene: assets.load("monkey.glb#Scene0"),
-    })
-}
 
-pub struct GameAssets{
-    bullet_scene: Handle<Scene>
-}
-
-fn tower_shooting(
-    mut commands: Commands,
-    bullet_assets: Res<GameAssets>,
-    mut towers: Query<&mut Tower>,
-    time: Res<Time>,
-) {
-    for mut tower in &mut towers {
-        tower.shooting_timer.tick(time.delta());
-        if tower.shooting_timer.just_finished() {
-            commands.spawn_bundle(SceneBundle {
-                scene: bullet_assets.bullet_scene.clone(),
-                transform: Transform::from_xyz(0.0, 0.7, 0.6)
-                    .with_scale(Vec3::new(0.2, 0.2, 0.2)),
-                ..default()
-            })
-                .insert(Lifetime{
-                    timer: Timer::from_seconds(0.5, false)
-                })
-                .insert(Name::new("Bullet"));
-        }
-    }
-}
-
-fn bullet_despawn(
-    mut commands: Commands,
-    mut bullets: Query<(Entity, &mut Lifetime)>,
-    time: Res<Time>
-){
-    for (entity, mut bullet) in &mut bullets{
-        bullet.timer.tick(time.delta());
-        if bullet.timer.just_finished(){
-            commands.entity(entity).despawn_recursive();
-        }
-    }
-}
-
-fn spawn_camera(mut commands: Commands) {
-    commands.spawn_bundle(Camera3dBundle {
-        transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..default()
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands.spawn_bundle(Camera2dBundle::default()).insert(ControlableCamera{
+        start_pos: Vec2::new(0.0, 0.0)
     });
+
+    let folder = "C:/Programming/Github/bevy_test_1/assets/images";
+    let paths = fs::read_dir(folder).unwrap();
+
+    for path in paths {
+        let x = path.unwrap().path();
+        let str_path = x.to_str().unwrap();
+
+        info!(str_path);
+
+        commands.spawn_bundle(SpriteBundle {
+            texture: asset_server.load(str_path),
+            ..default()
+        })
+            .insert(Image);
+    }
 }
 
-fn spawn_basic_scene(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+fn print_mouse_events_system(
+    mouse_button_input: Res<Input<MouseButton>>,
+    mut query: Query<(&mut ControlableCamera, &mut Transform)>,
+    mut windows: ResMut<Windows>,
 ) {
-    commands.spawn_bundle(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Plane { size: 5.0 })),
-        material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
-        ..default()
-    }).insert(Name::new("Ground"));
+    let (mut controlableCamera, mut transform) = query.single_mut();
+    let window = windows.primary_mut();
+    let pos = window.cursor_position();
 
-    commands.spawn_bundle(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
-        material: materials.add(Color::RED.into()),
-        transform: Transform::from_xyz(0.0, 0.5, 0.0),
-        ..default()
-    })
-        .insert(Tower {
-            shooting_timer: Timer::from_seconds(1.0, true)
-        })
-        .insert(Name::new("Tower"));
+    let wrld_pos = window_to_world(event.position, window, &transform);
+    info!("{:?}", wrld_pos);
 
-    commands.spawn_bundle(PointLightBundle {
-        point_light: PointLight {
-            intensity: 1500.0,
-            shadows_enabled: true,
-            ..default()
-        },
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
-        ..default()
-    })
-        .insert(Name::new("Light"));
+    if mouse_button_input.pressed(MouseButton::Left) {
+        info!("left mouse currently pressed");
+    }
+
+    if mouse_button_input.just_pressed(MouseButton::Left) {
+
+        info!("left mouse just pressed");
+    }
+
+    if mouse_button_input.just_released(MouseButton::Left) {
+        info!("left mouse just released");
+    }
+}
+
+fn window_to_world(
+    position: Vec2,
+    window: &Window,
+    camera: &Transform,
+) -> Vec3 {
+
+    // Center in screen space
+    let norm = Vec3::new(
+        position.x - window.width() / 2.,
+        position.y - window.height() / 2.,
+        0.,
+    );
+
+    // Apply camera transform
+    *camera * norm
+
+    // Alternatively:
+    //camera.mul_vec3(norm)
 }
